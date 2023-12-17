@@ -1,0 +1,5 @@
+.venv
+.idea
+*.pyc
+notas.txt
+log.csv
