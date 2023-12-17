@@ -19,6 +19,7 @@ class MainApp:
     test_period = 3000  # [ms] El tiempo considerado para estimar la taza de pérdida de mensajes
     max_response_delay = 2000  # [ms] El tiempo máximo que se espera una respuesta.
     print_period = 1000  # [ms] Cada cuanto tiempo se imprime mensaje en pantalla
+    destiny_name = 'NodoTest001'
 
     _close_event = threading.Event()
     _com = None
@@ -122,6 +123,19 @@ class MainApp:
                 continue
 
     @classmethod
+    def set_destiny_name(cls):
+        while True:
+            try:
+                value = input('Ingresar el nombre del nodo destino: ')
+                if value == '':
+                    raise ValueError
+                cls.destiny_name = value
+                break
+            except ValueError:
+                print('Valor incorrecto.')
+                continue
+
+    @classmethod
     def test_success_ratio(cls):
         """ Enviar un mensaje al nodo de prueba y esperar su respuesta.
         """
@@ -138,7 +152,7 @@ class MainApp:
         memory_response = [0] * total_length
 
         # create message
-        msg = dict(origin="Supervisor", destiny="NodoTest001")
+        msg = dict(origin="Supervisor", destiny=cls.destiny_name)
 
         # start message recording
         cls._start_recording()
@@ -233,9 +247,11 @@ class MainApp:
                               cls.set_test_period, False),
                         '3': (f'Ingresar el tiempo máximo de espera (={cls.max_response_delay})',
                               cls.set_max_response_delay, False),
-                        '4': (f'Iniciar envio de mensajes',
+                        '4': (f'Ingresar el nombre del nodo destino (={cls.destiny_name})',
+                              cls.set_destiny_name, False),
+                        '5': (f'Iniciar envio de mensajes',
                               cls.test_success_ratio, True),
-                        '5': (f'Ver todos los mensajes recibidos',
+                        '6': (f'Ver todos los mensajes recibidos',
                               cls.ver_mensajes, True),
                         'X': (f'Terminar', None, False)
                     }
