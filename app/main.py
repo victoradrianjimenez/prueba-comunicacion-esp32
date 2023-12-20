@@ -11,13 +11,13 @@ from .fake import FakeSerialHandler
 
 
 class MainApp:
-    serial = '/dev/ttyACM0'
+    serial = '/dev/ttyUSB1'
     log_filename = 'log.csv'
     baudrate = 115200
 
     message_period = 100  # [ms] Cada cuanto tiempo se envía un mensaje
-    test_period = 3000  # [ms] El tiempo considerado para estimar la taza de pérdida de mensajes
-    max_response_delay = 2000  # [ms] El tiempo máximo que se espera una respuesta.
+    test_period = 2000  # [ms] El tiempo considerado para estimar la taza de pérdida de mensajes
+    max_response_delay = 1000  # [ms] El tiempo máximo que se espera una respuesta.
     print_period = 1000  # [ms] Cada cuanto tiempo se imprime mensaje en pantalla
     destiny_name = 'NodoTest001'
 
@@ -44,8 +44,14 @@ class MainApp:
         # parsear json
         try:
             data = json.loads(msg)
+            if type(data) != dict:
+                raise ValueError
+            # ignorar mensajes del propio supervisor
+            if 'origin' in data:
+                if data['origin'] == 'Supervisor':
+                    return
         except ValueError:
-            logging.warning(f"Mensaje con formato inválido: {msg}")
+            # logging.warning(f"Mensaje con formato inválido: {msg}")
             return
 
         # procesar según sea el tipo de mensaje
@@ -77,6 +83,21 @@ class MainApp:
             cls._data.append(data)
             row = [data[v] for v in ('tiempo', 'origin', 'timestamp', 'class')] + [details]
             cls._writer.writerow(row)
+
+        """
+        # check it the current message corresponds to the response for any stored messages
+        if data.get('origin', '') == cls.destiny_name and data.get('class', '') == 'received':
+            try:
+                # marcar mensaje como recibido
+                # origin_ts = data['origin_ts']
+                # idx = cls.memory_timestamps.index(origin_ts)
+                # cls.memory_timestamps[idx] = None
+                # cls.memory_response[idx] = k - origin_ts
+                print(data)
+            except (ValueError, IndexError):
+                print('Mensaje erróneo')
+                pass
+        """
 
     @classmethod
     def set_message_period(cls):
@@ -148,7 +169,7 @@ class MainApp:
         total_length = (cls.test_period + cls.max_response_delay) // cls.message_period  # [ms]
         test_length = cls.test_period // cls.message_period  # [ms]
         memory_pos = 0
-        memory_timestamps = [None] * total_length
+        memory_timestamps = [t] * total_length
         memory_response = [0] * total_length
 
         # create message
@@ -160,6 +181,7 @@ class MainApp:
         # main loop
         while not cls._close_event.is_set():
             t = time.time_ns()//1000000
+
             # send message
             if t - last_t_msg >= cls.message_period:
                 # add timestamp to buffer
@@ -172,6 +194,8 @@ class MainApp:
                 # update loop indexes
                 last_t_msg += cls.message_period
                 memory_pos = (memory_pos + 1) % total_length
+                time.sleep((cls.message_period - t + last_t_msg) / 1000)
+
             # check it there are messages
             while len(cls._data) > 0:
                 row = cls._data.pop(0)
@@ -184,8 +208,9 @@ class MainApp:
                         memory_timestamps[idx] = None
                         memory_response[idx] = t - origin_ts
                     except (ValueError, IndexError):
-                        print('Mensaje erróneo')
+                        #print('Mensaje erróneo')
                         pass
+
             # show results
             if t - last_t_disp >= cls.print_period:
                 # process
@@ -200,6 +225,8 @@ class MainApp:
                 print(f"Success rate: {success_rate:.2f} ({success_count} of {n}) - " +
                       f"Average response time: {response_time:.2f} ms")
                 last_t_disp += cls.print_period
+
+
 
         # dejar de guardar mensajes
         cls._stop_recording()
@@ -263,9 +290,7 @@ class MainApp:
                     try:
                         function = f_map[opt][1]
                         wait = f_map[opt][2]
-                        if function is None:
-                            raise IndexError
-                    except IndexError:
+                    except (IndexError, KeyError):
                         print('Opción incorrecta.')
                         continue
                     if wait:

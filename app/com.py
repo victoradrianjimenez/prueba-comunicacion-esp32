@@ -7,7 +7,7 @@ from typing import Callable
 class SerialHandler:
     """ Serial communication handler. """
 
-    _delimiter = "\r\n"
+    _delimiter = b"\r\n"
 
     def __init__(self, address: str, baudrate: int, callback: Callable):
         """ Constructor.
@@ -17,17 +17,18 @@ class SerialHandler:
         """
         conn = serial.Serial()
         conn.port = address
-        conn.timeout = 1
+        conn.timeout = 0
         conn.baudrate = baudrate
         conn.setDTR(False)  # avoid problem with ESP32
         conn.setRTS(False)
+        conn.write_timeout = 0
         self._conn = conn
         self._callback = callback
         self._close_event = threading.Event()
         self._thread = threading.Thread(target=self._recv)
         self._buffer = ''
         self._messages = []
-        self.__del__ = self._clean
+        self.__del__ = self.close
 
     def start(self) -> bool:
         self.close()
@@ -43,49 +44,10 @@ class SerialHandler:
         """ Send a complete message.
         :param msg: Message without _delimiter.
         """
-        self._write(msg + self._delimiter)
+        self._conn.write(msg.encode() + self._delimiter)
+        self._conn.flushOutput()
 
     def close(self):
-        """Close the port.
-        """
-        self._clean()
-
-    def _read(self):
-        """Leer datos desde el puerto (no bloqueante).
-        :return: En caso de que no existan datos retorna None.
-        """
-        try:
-            d = self._conn.read_until(self._delimiter)
-            return d.decode()
-        except UnicodeDecodeError:
-            logging.warning(f"Some characters can't be decoded from serial.")
-        except serial.serialutil.SerialException:
-            logging.warning(f"Serial exception.")
-        return None
-
-    def _write(self, msg: str):
-        """Escribir datos en el puerto.
-        :param msg: Cadena de caracteres.
-        """
-        self._conn.write(msg.encode())
-
-    def _recv(self):
-        """ Thread for message receive.
-        :return: None
-        """
-        while not self._close_event.is_set():
-            data = self._read()
-            if data:
-                blocks = (self._buffer + data).split(self._delimiter)
-                self._buffer = blocks[-1]
-                if len(blocks) > 1:
-                    self._messages += blocks[0:-1]
-                    # get message
-                    msg = self._messages.pop(0) if self._messages else None
-                    if msg:
-                        self._callback(msg)
-
-    def _clean(self):
         """Clean variables and close connections.
         """
         if self._thread.is_alive():
@@ -93,3 +55,22 @@ class SerialHandler:
             self._thread.join()
         if self._conn.isOpen():
             self._conn.close()
+
+    def _recv(self):
+        """ Thread for message receive.
+        :return: None
+        """
+        while not self._close_event.is_set():
+            data = self._conn.read_until(self._delimiter).decode()
+            if data:
+
+                blocks = (self._buffer + data).split(self._delimiter.decode())
+                self._buffer = blocks[-1]
+                if len(blocks) > 1:
+
+                    self._messages += blocks[0:-1]
+                    # get message
+                    while len(self._messages) > 0:
+                        msg = self._messages.pop(0) if self._messages else None
+                        if msg:
+                            self._callback(msg)
